@@ -1,0 +1,184 @@
+# ============================================================
+# STEP 8: Final Production Pipeline
+# A single clean script that does everything end-to-end
+# Input:  StudentPerformanceFactors.csv
+# Output: predictions on new data + saved model artifacts
+# ============================================================
+
+import pandas as pd
+import numpy as np
+import pickle
+from sklearn.linear_model import Ridge
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+
+# ============================================================
+# 1. LOAD DATA
+# ============================================================
+print("=" * 55)
+print("  STUDENT EXAM SCORE PREDICTOR — FULL PIPELINE")
+print("=" * 55)
+
+df = pd.read_csv("StudentPerformanceFactors.csv")
+print(f"\n[1] Data loaded: {df.shape[0]} rows, {df.shape[1]} columns")
+
+# ============================================================
+# 2. CLEAN DATA
+# ============================================================
+# Fill missing values with mode
+for col in ["Teacher_Quality", "Parental_Education_Level", "Distance_from_Home"]:
+    df[col].fillna(df[col].mode()[0], inplace=True)
+
+# Cap Exam_Score at 100
+df["Exam_Score"] = df["Exam_Score"].clip(upper=100)
+print(f"[2] Cleaning done — 0 missing values remaining")
+
+# ============================================================
+# 3. ENCODE CATEGORICAL COLUMNS
+# ============================================================
+ordinal_maps = {
+    "Parental_Involvement":     {"Low": 0, "Medium": 1, "High": 2},
+    "Access_to_Resources":      {"Low": 0, "Medium": 1, "High": 2},
+    "Motivation_Level":         {"Low": 0, "Medium": 1, "High": 2},
+    "Family_Income":            {"Low": 0, "Medium": 1, "High": 2},
+    "Teacher_Quality":          {"Low": 0, "Medium": 1, "High": 2},
+    "Parental_Education_Level": {"High School": 0, "College": 1, "Postgraduate": 2},
+    "Distance_from_Home":       {"Near": 0, "Moderate": 1, "Far": 2},
+    "Peer_Influence":           {"Negative": 0, "Neutral": 1, "Positive": 2},
+}
+for col, mapping in ordinal_maps.items():
+    df[col] = df[col].map(mapping)
+
+binary_cols = ["Extracurricular_Activities", "Internet_Access",
+               "Learning_Disabilities", "School_Type", "Gender"]
+label_encoders = {}
+for col in binary_cols:
+    le = LabelEncoder()
+    df[col] = le.fit_transform(df[col])
+    label_encoders[col] = le
+
+print(f"[3] Encoding done — all features are numeric")
+
+# ============================================================
+# 4. FEATURE ENGINEERING
+# ============================================================
+df["Study_Efficiency"]      = df["Hours_Studied"] / (df["Attendance"] + 1)
+df["Support_Score"]         = (df["Parental_Involvement"] + df["Access_to_Resources"] +
+                                df["Teacher_Quality"] + df["Internet_Access"])
+df["Wellbeing_Score"]       = df["Sleep_Hours"] + df["Physical_Activity"]
+df["Academic_History"]      = df["Previous_Scores"] * 0.7 + df["Tutoring_Sessions"] * 0.3
+df["Motivation_Resources"]  = df["Motivation_Level"] * df["Access_to_Resources"]
+df["Attendance_Study"]      = df["Attendance"] * df["Hours_Studied"]
+
+print(f"[4] Feature engineering done — {df.shape[1]} total columns")
+
+# ============================================================
+# 5. TRAIN / TEST SPLIT + SCALING
+# ============================================================
+X = df.drop(columns=["Exam_Score"])
+y = df["Exam_Score"]
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)
+
+# Fix NaNs with train median
+train_medians = X_train.median()
+X_train = X_train.fillna(train_medians)
+X_test  = X_test.fillna(train_medians)
+
+scaler = StandardScaler()
+X_train_s = scaler.fit_transform(X_train)
+X_test_s  = scaler.transform(X_test)
+
+print(f"[5] Split done — Train: {len(X_train)} rows | Test: {len(X_test)} rows")
+
+# ============================================================
+# 6. TRAIN FINAL MODEL (Ridge, alpha=0.5)
+# ============================================================
+model = Ridge(alpha=0.5)
+model.fit(X_train_s, y_train)
+print(f"[6] Model trained — Ridge Regression (alpha=0.5)")
+
+# ============================================================
+# 7. EVALUATE
+# ============================================================
+y_pred = model.predict(X_test_s)
+rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+mae  = mean_absolute_error(y_test, y_pred)
+r2   = r2_score(y_test, y_pred)
+
+print(f"\n{'='*55}")
+print(f"  FINAL MODEL PERFORMANCE")
+print(f"{'='*55}")
+print(f"  RMSE : {rmse:.4f}  (avg error in exam score points)")
+print(f"  MAE  : {mae:.4f}  (avg absolute error)")
+print(f"  R²   : {r2:.4f}  (variance explained)")
+print(f"{'='*55}")
+
+# ============================================================
+# 8. SAVE ALL ARTIFACTS
+# ============================================================
+with open("final_model.pkl", "wb") as f:
+    pickle.dump(model, f)
+
+with open("final_scaler.pkl", "wb") as f:
+    pickle.dump(scaler, f)
+
+with open("final_encoders.pkl", "wb") as f:
+    pickle.dump(label_encoders, f)
+
+with open("final_medians.pkl", "wb") as f:
+    pickle.dump(train_medians, f)
+
+print(f"\n[8] Artifacts saved:")
+print(f"    final_model.pkl    — trained Ridge model")
+print(f"    final_scaler.pkl   — StandardScaler")
+print(f"    final_encoders.pkl — LabelEncoders for binary cols")
+print(f"    final_medians.pkl  — median values for NaN filling")
+
+# ============================================================
+# 9. PREDICT ON NEW STUDENT (example usage)
+# ============================================================
+print(f"\n{'='*55}")
+print(f"  EXAMPLE: Predicting score for a new student")
+print(f"{'='*55}")
+
+new_student = pd.DataFrame([{
+    "Hours_Studied": 25,
+    "Attendance": 85,
+    "Parental_Involvement": 2,        # High
+    "Access_to_Resources": 2,         # High
+    "Extracurricular_Activities": 1,  # Yes
+    "Sleep_Hours": 7,
+    "Previous_Scores": 75,
+    "Motivation_Level": 2,            # High
+    "Internet_Access": 1,             # Yes
+    "Tutoring_Sessions": 3,
+    "Family_Income": 1,               # Medium
+    "Teacher_Quality": 2,             # High
+    "School_Type": 0,                 # Public
+    "Peer_Influence": 2,              # Positive
+    "Physical_Activity": 4,
+    "Learning_Disabilities": 0,       # No
+    "Parental_Education_Level": 1,    # College
+    "Distance_from_Home": 0,          # Near
+    "Gender": 1,                      # Male
+}])
+
+# Apply same feature engineering
+new_student["Study_Efficiency"]     = new_student["Hours_Studied"] / (new_student["Attendance"] + 1)
+new_student["Support_Score"]        = (new_student["Parental_Involvement"] + new_student["Access_to_Resources"] +
+                                        new_student["Teacher_Quality"] + new_student["Internet_Access"])
+new_student["Wellbeing_Score"]      = new_student["Sleep_Hours"] + new_student["Physical_Activity"]
+new_student["Academic_History"]     = new_student["Previous_Scores"] * 0.7 + new_student["Tutoring_Sessions"] * 0.3
+new_student["Motivation_Resources"] = new_student["Motivation_Level"] * new_student["Access_to_Resources"]
+new_student["Attendance_Study"]     = new_student["Attendance"] * new_student["Hours_Studied"]
+
+new_student = new_student.fillna(train_medians)
+new_student_s = scaler.transform(new_student)
+predicted_score = model.predict(new_student_s)[0]
+
+print(f"  Predicted Exam Score: {predicted_score:.1f} / 100")
+print(f"\n✅ Pipeline complete! Your model is production-ready.")

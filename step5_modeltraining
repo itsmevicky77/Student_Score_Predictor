@@ -1,0 +1,107 @@
+# ============================================================
+# STEP 5: Model Selection & Training (Fixed - handles NaNs)
+# Input:  X_train.csv, X_test.csv, y_train.csv, y_test.csv
+# Output: best_model.pkl + comparison of multiple models
+# ============================================================
+
+import pandas as pd
+import numpy as np
+import pickle
+import time
+from sklearn.linear_model import LinearRegression, Ridge, Lasso
+from sklearn.tree import DecisionTreeRegressor
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+
+# ── Load splits ──────────────────────────────────────────────
+X_train = pd.read_csv("X_train.csv")
+X_test  = pd.read_csv("X_test.csv")
+y_train = pd.read_csv("y_train.csv").squeeze()
+y_test  = pd.read_csv("y_test.csv").squeeze()
+
+print(f"X_train: {X_train.shape} | X_test: {X_test.shape}")
+
+# ── Fix NaN values ───────────────────────────────────────────
+# NaNs can appear in engineered features (e.g. division by zero)
+nan_train = X_train.isnull().sum().sum()
+nan_test  = X_test.isnull().sum().sum()
+print(f"\nNaN check — X_train: {nan_train} | X_test: {nan_test}")
+
+if nan_train > 0 or nan_test > 0:
+    print("NaNs found — filling with column median...")
+    # Compute median from train only (no leakage)
+    train_medians = X_train.median()
+    X_train = X_train.fillna(train_medians)
+    X_test  = X_test.fillna(train_medians)
+    print(f"After fix — X_train NaNs: {X_train.isnull().sum().sum()} | X_test NaNs: {X_test.isnull().sum().sum()}")
+else:
+    train_medians = X_train.median()
+
+# ── Define models to compare ─────────────────────────────────
+models = {
+    "Linear Regression":  LinearRegression(),
+    "Ridge Regression":   Ridge(alpha=1.0),
+    "Lasso Regression":   Lasso(alpha=0.1),
+    "Decision Tree":      DecisionTreeRegressor(random_state=42),
+    "Random Forest":      RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1),
+    "Gradient Boosting":  GradientBoostingRegressor(n_estimators=100, random_state=42),
+}
+
+# ── Train & evaluate each model ──────────────────────────────
+results = []
+
+print("\n" + "="*70)
+print(f"{'Model':<25} {'RMSE':>8} {'MAE':>8} {'R²':>8} {'Time':>8}")
+print("="*70)
+
+trained_models = {}
+
+for name, model in models.items():
+    start = time.time()
+    model.fit(X_train, y_train)
+    elapsed = time.time() - start
+
+    y_pred = model.predict(X_test)
+    rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+    mae  = mean_absolute_error(y_test, y_pred)
+    r2   = r2_score(y_test, y_pred)
+
+    results.append({"Model": name, "RMSE": rmse, "MAE": mae, "R2": r2, "Time": elapsed})
+    trained_models[name] = model
+
+    print(f"{name:<25} {rmse:>8.4f} {mae:>8.4f} {r2:>8.4f} {elapsed:>7.2f}s")
+
+print("="*70)
+
+# ── Pick best model by RMSE ──────────────────────────────────
+results_df = pd.DataFrame(results).sort_values("RMSE")
+best_row   = results_df.iloc[0]
+best_name  = best_row["Model"]
+best_model = trained_models[best_name]
+
+print(f"\n🏆 Best model: {best_name}")
+print(f"   RMSE : {best_row['RMSE']:.4f}")
+print(f"   MAE  : {best_row['MAE']:.4f}")
+print(f"   R²   : {best_row['R2']:.4f}")
+
+# ── Feature importance (if tree-based) ──────────────────────
+if hasattr(best_model, "feature_importances_"):
+    importances = pd.Series(best_model.feature_importances_, index=X_train.columns)
+    top10 = importances.sort_values(ascending=False).head(10)
+    print(f"\nTop 10 Feature Importances ({best_name}):")
+    for feat, imp in top10.items():
+        bar = "█" * int(imp * 200)
+        print(f"  {feat:<30} {imp:.4f}  {bar}")
+
+# ── Save best model ──────────────────────────────────────────
+with open("best_model.pkl", "wb") as f:
+    pickle.dump(best_model, f)
+
+with open("train_medians.pkl", "wb") as f:
+    pickle.dump(train_medians, f)
+
+results_df.to_csv("model_comparison.csv", index=False)
+
+print(f"\n✅ Best model saved as:     best_model.pkl")
+print(f"✅ Train medians saved as:  train_medians.pkl")
+print(f"✅ Comparison saved as:     model_comparison.csv")

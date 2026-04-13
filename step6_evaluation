@@ -1,0 +1,113 @@
+# ============================================================
+# STEP 6: Model Evaluation
+# Input:  best_model.pkl, X_train.csv, X_test.csv,
+#         y_train.csv, y_test.csv, train_medians.pkl
+# Output: evaluation plots + cross-validation scores
+# ============================================================
+
+import pandas as pd
+import numpy as np
+import pickle
+import matplotlib.pyplot as plt
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+from sklearn.model_selection import cross_val_score
+
+# ── Load data & model ────────────────────────────────────────
+X_train = pd.read_csv("X_train.csv")
+X_test  = pd.read_csv("X_test.csv")
+y_train = pd.read_csv("y_train.csv").squeeze()
+y_test  = pd.read_csv("y_test.csv").squeeze()
+
+with open("best_model.pkl", "rb") as f:
+    model = pickle.load(f)
+
+with open("train_medians.pkl", "rb") as f:
+    train_medians = pickle.load(f)
+
+# Fix NaNs
+X_train = X_train.fillna(train_medians)
+X_test  = X_test.fillna(train_medians)
+
+# ── Predictions ──────────────────────────────────────────────
+y_pred_test  = model.predict(X_test)
+y_pred_train = model.predict(X_train)
+
+# ── Core Metrics ─────────────────────────────────────────────
+rmse_test  = np.sqrt(mean_squared_error(y_test, y_pred_test))
+mae_test   = mean_absolute_error(y_test, y_pred_test)
+r2_test    = r2_score(y_test, y_pred_test)
+rmse_train = np.sqrt(mean_squared_error(y_train, y_pred_train))
+r2_train   = r2_score(y_train, y_pred_train)
+
+print("=" * 45)
+print("        MODEL EVALUATION REPORT")
+print("=" * 45)
+print(f"  {'Metric':<20} {'Train':>8} {'Test':>8}")
+print("-" * 45)
+print(f"  {'RMSE':<20} {rmse_train:>8.4f} {rmse_test:>8.4f}")
+print(f"  {'R²':<20} {r2_train:>8.4f} {r2_test:>8.4f}")
+print(f"  {'MAE':<20} {'—':>8} {mae_test:>8.4f}")
+print("=" * 45)
+
+# Overfitting check
+gap = r2_train - r2_test
+print(f"\nOverfit check (R² gap): {gap:.4f}", end=" ")
+if gap < 0.05:
+    print("✅ No overfitting")
+elif gap < 0.10:
+    print("⚠️  Slight overfitting")
+else:
+    print("❌ Overfitting detected")
+
+# ── Cross-Validation (5-fold) ────────────────────────────────
+print("\nRunning 5-fold cross-validation on full dataset...")
+X_all = pd.concat([X_train, X_test]).fillna(train_medians)
+y_all = pd.concat([y_train, y_test])
+
+cv_scores = cross_val_score(model, X_all, y_all, cv=5, scoring="r2")
+print(f"  CV R² scores:  {[round(s, 4) for s in cv_scores]}")
+print(f"  CV R² mean:    {cv_scores.mean():.4f}")
+print(f"  CV R² std:     {cv_scores.std():.4f}")
+
+# ── Plot 1: Actual vs Predicted ──────────────────────────────
+plt.figure(figsize=(7, 6))
+plt.scatter(y_test, y_pred_test, alpha=0.3, s=15, color="steelblue", label="Predictions")
+min_val = min(y_test.min(), y_pred_test.min())
+max_val = max(y_test.max(), y_pred_test.max())
+plt.plot([min_val, max_val], [min_val, max_val], "r--", lw=1.5, label="Perfect prediction")
+plt.xlabel("Actual Exam Score")
+plt.ylabel("Predicted Exam Score")
+plt.title("Actual vs Predicted Exam Score")
+plt.legend()
+plt.tight_layout()
+plt.savefig("plot5_actual_vs_predicted.png", dpi=150)
+plt.close()
+print("\n[Saved] plot5_actual_vs_predicted.png")
+
+# ── Plot 2: Residuals ────────────────────────────────────────
+residuals = y_test - y_pred_test
+plt.figure(figsize=(7, 5))
+plt.scatter(y_pred_test, residuals, alpha=0.3, s=15, color="coral")
+plt.axhline(0, color="black", lw=1.5, linestyle="--")
+plt.xlabel("Predicted Exam Score")
+plt.ylabel("Residual (Actual − Predicted)")
+plt.title("Residual Plot")
+plt.tight_layout()
+plt.savefig("plot6_residuals.png", dpi=150)
+plt.close()
+print("[Saved] plot6_residuals.png")
+
+# ── Plot 3: Residual Distribution ───────────────────────────
+plt.figure(figsize=(7, 4))
+plt.hist(residuals, bins=40, color="steelblue", edgecolor="white")
+plt.axvline(0, color="red", linestyle="--")
+plt.xlabel("Residual")
+plt.ylabel("Count")
+plt.title("Distribution of Residuals")
+plt.tight_layout()
+plt.savefig("plot7_residual_distribution.png", dpi=150)
+plt.close()
+print("[Saved] plot7_residual_distribution.png")
+
+print(f"\n✅ Evaluation complete!")
+print(f"   Model predicts exam scores within ~{mae_test:.2f} points on average.")

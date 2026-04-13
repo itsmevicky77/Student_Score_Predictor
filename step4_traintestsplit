@@ -1,0 +1,66 @@
+# ============================================================
+# STEP 4: Train / Test Split
+# Input:  student_features.csv
+# Output: X_train.csv, X_test.csv, y_train.csv, y_test.csv
+# ============================================================
+
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+import pickle
+
+# ── Load featured data ───────────────────────────────────────
+df = pd.read_csv("student_features.csv")
+print(f"Input shape: {df.shape}")
+
+# ── Separate features and target ─────────────────────────────
+X = df.drop(columns=["Exam_Score"])
+y = df["Exam_Score"]
+
+print(f"\nFeatures (X): {X.shape}")
+print(f"Target   (y): {y.shape}")
+print(f"\nTarget stats:")
+print(y.describe())
+
+# ── Train / Test Split ───────────────────────────────────────
+# 80% train, 20% test | random_state=42 for reproducibility
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)
+
+print(f"\nTrain size: {X_train.shape[0]} rows ({X_train.shape[0]/len(df)*100:.1f}%)")
+print(f"Test size:  {X_test.shape[0]} rows  ({X_test.shape[0]/len(df)*100:.1f}%)")
+
+# ── Verify target distribution is similar in both splits ─────
+print(f"\nTarget distribution check:")
+print(f"  y_train mean: {y_train.mean():.2f}  std: {y_train.std():.2f}")
+print(f"  y_test  mean: {y_test.mean():.2f}  std: {y_test.std():.2f}")
+
+# ── Scale numeric features ───────────────────────────────────
+# StandardScaler: mean=0, std=1
+# Fit ONLY on train data — never on test (prevents data leakage)
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled  = scaler.transform(X_test)
+
+# Convert back to DataFrames to keep column names
+X_train_scaled = pd.DataFrame(X_train_scaled, columns=X.columns)
+X_test_scaled  = pd.DataFrame(X_test_scaled,  columns=X.columns)
+
+print(f"\nScaling done (fit on train only — no data leakage)")
+print(f"  X_train sample after scaling:")
+print(X_train_scaled.head(2).round(3))
+
+# ── Save splits ──────────────────────────────────────────────
+X_train_scaled.to_csv("X_train.csv", index=False)
+X_test_scaled.to_csv("X_test.csv",   index=False)
+y_train.to_csv("y_train.csv",        index=False)
+y_test.to_csv("y_test.csv",          index=False)
+
+# Save scaler for use during prediction on new data
+with open("scaler.pkl", "wb") as f:
+    pickle.dump(scaler, f)
+
+print("\n✅ Saved: X_train.csv, X_test.csv, y_train.csv, y_test.csv")
+print("✅ Saved: scaler.pkl")

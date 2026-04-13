@@ -1,0 +1,99 @@
+# ============================================================
+# STEP 7: Hyperparameter Tuning (Ridge Regression)
+# Input:  X_train.csv, X_test.csv, y_train.csv, y_test.csv
+# Output: tuned_model.pkl
+# ============================================================
+
+import pandas as pd
+import numpy as np
+import pickle
+import matplotlib.pyplot as plt
+from sklearn.linear_model import Ridge
+from sklearn.model_selection import GridSearchCV, cross_val_score
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+
+# ── Load data ────────────────────────────────────────────────
+X_train = pd.read_csv("X_train.csv")
+X_test  = pd.read_csv("X_test.csv")
+y_train = pd.read_csv("y_train.csv").squeeze()
+y_test  = pd.read_csv("y_test.csv").squeeze()
+
+with open("train_medians.pkl", "rb") as f:
+    train_medians = pickle.load(f)
+
+X_train = X_train.fillna(train_medians)
+X_test  = X_test.fillna(train_medians)
+
+# ── Grid Search: find best alpha ─────────────────────────────
+# Alpha controls regularisation strength — higher = more penalty
+param_grid = {"alpha": [0.001, 0.01, 0.1, 0.5, 1.0, 5.0, 10.0, 50.0, 100.0, 500.0]}
+
+print("Running GridSearchCV (5-fold) over alpha values...")
+grid_search = GridSearchCV(
+    Ridge(),
+    param_grid,
+    cv=5,
+    scoring="neg_root_mean_squared_error",
+    verbose=1
+)
+grid_search.fit(X_train, y_train)
+
+best_alpha  = grid_search.best_params_["alpha"]
+best_cv_score = -grid_search.best_score_
+print(f"\n✅ Best alpha:    {best_alpha}")
+print(f"   Best CV RMSE: {best_cv_score:.4f}")
+
+# ── Train final tuned model ──────────────────────────────────
+tuned_model = Ridge(alpha=best_alpha)
+tuned_model.fit(X_train, y_train)
+y_pred = tuned_model.predict(X_test)
+
+rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+mae  = mean_absolute_error(y_test, y_pred)
+r2   = r2_score(y_test, y_pred)
+
+print(f"\n{'='*45}")
+print(f"  TUNED MODEL RESULTS")
+print(f"{'='*45}")
+print(f"  RMSE : {rmse:.4f}")
+print(f"  MAE  : {mae:.4f}")
+print(f"  R²   : {r2:.4f}")
+print(f"{'='*45}")
+
+# ── Compare baseline vs tuned ────────────────────────────────
+print(f"\nComparison (baseline alpha=1.0 vs tuned alpha={best_alpha}):")
+baseline = Ridge(alpha=1.0).fit(X_train, y_train)
+base_rmse = np.sqrt(mean_squared_error(y_test, baseline.predict(X_test)))
+base_r2   = r2_score(y_test, baseline.predict(X_test))
+print(f"  Baseline  → RMSE: {base_rmse:.4f}  R²: {base_r2:.4f}")
+print(f"  Tuned     → RMSE: {rmse:.4f}  R²: {r2:.4f}")
+improvement = base_rmse - rmse
+print(f"  Improvement in RMSE: {improvement:+.4f}")
+
+# ── Plot alpha vs CV RMSE ────────────────────────────────────
+alphas     = param_grid["alpha"]
+cv_rmses   = [-s for s in grid_search.cv_results_["mean_test_score"]]
+cv_stds    = grid_search.cv_results_["std_test_score"]
+
+plt.figure(figsize=(8, 4))
+plt.semilogx(alphas, cv_rmses, marker="o", color="steelblue", lw=2)
+plt.fill_between(alphas,
+                 np.array(cv_rmses) - cv_stds,
+                 np.array(cv_rmses) + cv_stds,
+                 alpha=0.2, color="steelblue")
+plt.axvline(best_alpha, color="red", linestyle="--", label=f"Best alpha={best_alpha}")
+plt.xlabel("Alpha (log scale)")
+plt.ylabel("CV RMSE")
+plt.title("Ridge Regression: Alpha vs CV RMSE")
+plt.legend()
+plt.tight_layout()
+plt.savefig("plot8_alpha_tuning.png", dpi=150)
+plt.close()
+print("\n[Saved] plot8_alpha_tuning.png")
+
+# ── Save tuned model ─────────────────────────────────────────
+with open("tuned_model.pkl", "wb") as f:
+    pickle.dump(tuned_model, f)
+
+print("✅ Tuned model saved as: tuned_model.pkl")
+print("\n🎯 Ready for Step 8: Final Production Pipeline!")

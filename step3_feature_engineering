@@ -1,0 +1,59 @@
+# ============================================================
+# STEP 3: Feature Engineering
+# Input:  student_cleaned.csv
+# Output: student_features.csv
+# ============================================================
+
+import pandas as pd
+import numpy as np
+
+# ── Load cleaned data ────────────────────────────────────────
+df = pd.read_csv("student_cleaned.csv")
+print(f"Input shape: {df.shape}")
+
+# ── Feature 1: Study Efficiency ──────────────────────────────
+# Hours studied relative to attendance — a student who studies more
+# but attends less may be self-driven
+df["Study_Efficiency"] = df["Hours_Studied"] / (df["Attendance"] + 1)
+
+# ── Feature 2: Support Score ─────────────────────────────────
+# Combined measure of external support available to the student
+df["Support_Score"] = (
+    df["Parental_Involvement"] +
+    df["Access_to_Resources"] +
+    df["Teacher_Quality"] +
+    df["Internet_Access"]
+)
+
+# ── Feature 3: Wellbeing Score ───────────────────────────────
+# Combines sleep and physical activity as a proxy for student health
+df["Wellbeing_Score"] = df["Sleep_Hours"] + df["Physical_Activity"]
+
+# ── Feature 4: Academic History Score ───────────────────────
+# Weighted combo of previous scores and tutoring sessions
+df["Academic_History"] = df["Previous_Scores"] * 0.7 + df["Tutoring_Sessions"] * 0.3
+
+# ── Feature 5: Motivation x Resources ───────────────────────
+# High motivation is only useful if resources are available
+df["Motivation_Resources"] = df["Motivation_Level"] * df["Access_to_Resources"]
+
+# ── Feature 6: Attendance x Study Hours ─────────────────────
+# Students who both attend AND study are likely stronger performers
+df["Attendance_Study"] = df["Attendance"] * df["Hours_Studied"]
+
+# ── Summary ──────────────────────────────────────────────────
+new_features = [
+    "Study_Efficiency", "Support_Score", "Wellbeing_Score",
+    "Academic_History", "Motivation_Resources", "Attendance_Study"
+]
+
+print(f"\nNew features added: {new_features}")
+print(f"\nSample values:")
+print(df[new_features].head())
+print(f"\nNew feature stats:")
+print(df[new_features].describe())
+print(f"\nFinal shape: {df.shape}")
+
+# ── Save ─────────────────────────────────────────────────────
+df.to_csv("student_features.csv", index=False)
+print("\n✅ Feature engineered dataset saved as: student_features.csv")
